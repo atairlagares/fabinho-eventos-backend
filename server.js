@@ -38,7 +38,8 @@ app.use(cors({
   }
 }));
 */
-app.use(cors()); // Usando CORS com configuração padrão para permitir todas as origens por enquanto
+// Configuração de CORS mais explícita para aceitar todas as origens
+app.use(cors({ origin: '*' }));
 
 // Importa os modelos
 const User = require('./models/User');
