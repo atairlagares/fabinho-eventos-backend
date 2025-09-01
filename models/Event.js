@@ -1,13 +1,12 @@
 // models/Event.js
-// Definição do esquema e modelo para Eventos
 
 const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
 
-const EventSchema = new mongoose.Schema({
+const eventSchema = new Schema({
   title: {
     type: String,
     required: true,
-    trim: true,
   },
   description: {
     type: String,
@@ -19,32 +18,27 @@ const EventSchema = new mongoose.Schema({
   },
   endDate: {
     type: Date,
-    required: true,
   },
   location: {
     type: String,
-    required: true,
-    trim: true,
   },
-  // Referência ao usuário que criou o evento (administrador)
-  admin: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-  },
-  // Lista de IDs de usuários (freelancers) que trabalharão no evento
-  workers: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-  }],
   isPublished: {
     type: Boolean,
-    default: false, // Eventos podem ser criados e depois publicados por um admin
+    default: false,
   },
-  createdAt: {
-    type: Date,
-    default: Date.now,
+  // Referência ao admin que criou o evento
+  admin: {
+    type: Schema.Types.ObjectId,
+    ref: 'User', // Faz referência ao modelo 'User'
+    required: true,
   },
+  // Lista de freelancers que trabalharão no evento
+  workers: [{
+    type: Schema.Types.ObjectId,
+    ref: 'User', // Faz referência ao modelo 'User'
+  }],
+}, {
+  timestamps: true // Adiciona os campos createdAt e updatedAt automaticamente
 });
 
-module.exports = mongoose.model('Event', EventSchema);
+module.exports = mongoose.model('Event', eventSchema);
