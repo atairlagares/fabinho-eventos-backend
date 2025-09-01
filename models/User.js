@@ -1,37 +1,29 @@
-// models/User.js
-// Definição do esquema e modelo para usuários
+// backend/models/User.js
 
 const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
 
-// Define o esquema do usuário
-const UserSchema = new mongoose.Schema({
+const userSchema = new Schema({
+  name: {
+    type: String,
+    required: true,
+  },
   email: {
     type: String,
     required: true,
-    unique: true, // Garante que cada e-mail seja único
-    lowercase: true, // Armazena e-mails em minúsculas
-    trim: true, // Remove espaços em branco do início e fim
+    unique: true, // Garante que cada email seja único no banco de dados
   },
   password: {
     type: String,
     required: true,
   },
-  name: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  // 'freelancer' ou 'admin'
   role: {
     type: String,
-    enum: ['freelancer', 'admin'], // Garante que o role seja um desses valores
-    default: 'freelancer',
+    enum: ['freelancer', 'admin'], // O papel só pode ser um desses dois valores
+    default: 'freelancer', // O padrão é freelancer
   },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-  },
+}, {
+  timestamps: true // Adiciona os campos createdAt e updatedAt
 });
 
-// Cria e exporta o modelo User a partir do esquema
-module.exports = mongoose.model('User', UserSchema);
+module.exports = mongoose.model('User', userSchema);
