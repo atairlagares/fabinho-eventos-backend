@@ -2,42 +2,20 @@
 // Configuração inicial do servidor Node.js com Express.js e conexão MongoDB
 // Incluindo rotas de registro, login de usuário, middleware de autenticação e autorização
 // e rotas para Eventos, Vagas, Avaliações e Mensagens
-// Agora com configuração CORS
+// AGORA COM TIMEOUTS AJUSTADOS PARA AMBIENTES DE NUVEM
 
 const express = require('express');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const cors = require('cors'); // Importa o pacote CORS
+const cors = require('cors');
 const app = express();
 
-// Carrega as variáveis de ambiente do arquivo .env
 dotenv.config();
 
-// Middleware para analisar o corpo das requisições JSON
 app.use(express.json());
 
-// =========================================================================================
-// Configuração do CORS
-// =========================================================================================
-// Para desenvolvimento: Permite todas as origens.
-// Em produção, é RECOMENDADO restringir para o(s) domínio(s) do seu frontend.
-// Exemplo para produção (substitua com o domínio real do seu frontend quando fizer o deploy):
-/*
-const allowedOrigins = ['https://seudominiofrontend.com', 'exp://*.expo.dev']; // Adicione as origens permitidas
-app.use(cors({
-  origin: function (origin, callback) {
-    // Permite requisições sem origem (como de aplicativos móveis ou ferramentas como Postman/Insomnia)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'A política CORS para este site não permite acesso da origem especificada.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  }
-}));
-*/
 // Configuração de CORS mais explícita para aceitar todas as origens
 app.use(cors({ origin: '*' }));
 
@@ -50,7 +28,7 @@ const Message = require('./models/Message');
 
 // Importa os middlewares
 const auth = require('./middleware/auth');
-const roleAuth = require('./middleware/roleAuth'); // Importa o middleware de autorização por papel
+const roleAuth = require('./middleware/roleAuth');
 
 // --------------------------------------------------------------------------
 // Conexão com o MongoDB
@@ -61,13 +39,18 @@ if (!mongoUri) {
   console.error('Erro: MONGO_URI não definida no arquivo .env!');
 }
 
-mongoose.connect(mongoUri)
+// =========================================================================================
+// MUDANÇA IMPORTANTE: Adicionamos opções de timeout para a conexão
+// =========================================================================================
+mongoose.connect(mongoUri, {
+  serverSelectionTimeoutMS: 30000, // Aumenta o timeout para 30 segundos para a seleção do servidor
+  socketTimeoutMS: 45000, // Aumenta o timeout do socket para 45 segundos
+})
   .then(() => console.log('Conexão com MongoDB estabelecida com sucesso!'))
   .catch(err => console.error('Erro ao conectar ao MongoDB:', err));
+// =========================================================================================
 
-// --------------------------------------------------------------------------
-// Rotas da API
-// --------------------------------------------------------------------------
+// ... (O RESTANTE DO CÓDIGO PERMANECE IGUAL) ...
 
 // Rota de teste simples
 app.get('/', (req, res) => {
