@@ -1,551 +1,591 @@
-// server.js
-// Configuração inicial do servidor Node.js com Express.js e conexão MongoDB
-// Incluindo rotas de registro, login de usuário, middleware de autenticação e autorização
-// e rotas para Eventos, Vagas, Avaliações e Mensagens
-// AGORA COM TIMEOUTS AJUSTADOS PARA AMBIENTES DE NUVEM
+// backend/server.js
 
 const express = require('express');
-const dotenv = require('dotenv');
-const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const { google } = require('googleapis');
 const cors = require('cors');
 const app = express();
 
-dotenv.config();
-
 app.use(express.json());
-
-// Configuração de CORS mais explícita para aceitar todas as origens
 app.use(cors({ origin: '*' }));
 
-// Importa os modelos
-const User = require('./models/User');
-const Event = require('./models/Event');
-const Job = require('./models/Job');
-const Review = require('./models/Review');
-const Message = require('./models/Message');
-
-// Importa os middlewares
-const auth = require('./middleware/auth');
-const roleAuth = require('./middleware/roleAuth');
-
-// --------------------------------------------------------------------------
-// Conexão com o MongoDB
-// --------------------------------------------------------------------------
-const mongoUri = process.env.MONGO_URI;
-
-if (!mongoUri) {
-  console.error('Erro: MONGO_URI não definida no arquivo .env!');
+// --- FUNÇÕES DE AUTENTICAÇÃO E ACESSO À PLANILHA ---
+async function getGoogleSheetsClient() {
+  const auth = new google.auth.GoogleAuth({
+    keyFile: 'google-credentials.json',
+    scopes: 'https://www.googleapis.com/auth/spreadsheets',
+  });
+  const client = await auth.getClient();
+  return google.sheets({ version: 'v4', auth: client });
 }
 
-// =========================================================================================
-// MUDANÇA IMPORTANTE: Adicionamos opções de timeout para a conexão
-// =========================================================================================
-mongoose.connect(mongoUri, {
-  serverSelectionTimeoutMS: 30000, // Aumenta o timeout para 30 segundos para a seleção do servidor
-  socketTimeoutMS: 45000, // Aumenta o timeout do socket para 45 segundos
-})
-  .then(() => console.log('Conexão com MongoDB estabelecida com sucesso!'))
-  .catch(err => console.error('Erro ao conectar ao MongoDB:', err));
-// =========================================================================================
+// IDs das Planilhas
+const spreadsheetId_data = '1EkLUvQ3l8gAnim89pjDDn8BHBFlilywY7drj2b7N1cE';
+const spreadsheetId_users = '1J_bwtyK-3Z9jPy8Bp4u8IdJ9_9iE80J7fWg1yae7lO8';
+const spreadsheetId_stock = '1fjeYInwN2zScgIPPyJcfJ8z7i1N3QJQbShE-EwKDdRA';
 
-// ... (O RESTANTE DO CÓDIGO PERMANECE IGUAL) ...
-
-// Rota de teste simples
-app.get('/', (req, res) => {
-  res.send('Servidor Node.js do Backend está funcionando!');
-});
-
-// --- Rotas de Autenticação ---
-
-// Rota de Registro de Usuário
-app.post('/api/register', async (req, res) => {
-  try {
-    const { name, email, password, role } = req.body;
-
-    if (!name || !email || !password) {
-      return res.status(400).json({ message: 'Por favor, preencha todos os campos obrigatórios: nome, email e senha.' });
+// --- ROTAS DO MÓDULO FINANCEIRO (Omitido) ---
+// ... (código existente)
+// --- ROTAS DE LEITURA (GET) - MÓDULO FINANCEIRO ---
+app.get('/api/events', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_data, range: 'Eventos!A2:A' });
+        const rows = response.data.values || [];
+        const events = rows.flat();
+        res.status(200).json(events);
+    } catch (error) {
+        console.error('Erro ao buscar dados de eventos:', error);
+        res.status(500).json({ message: 'Erro interno do servidor ao buscar eventos.' });
     }
-
-    let user = await User.findOne({ email });
-    if (user) {
-      return res.status(400).json({ message: 'Este e-mail já está em uso.' });
+});
+app.get('/api/waiters', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_data, range: 'Garçons!A2:B' });
+        const rows = response.data.values || [];
+        const waiters = rows.map(row => ({ cpf: row[0], name: row[1] }));
+        res.status(200).json(waiters);
+    } catch (error) {
+        console.error('Erro ao buscar dados de garçons:', error);
+        res.status(500).json({ message: 'Erro interno do servidor ao buscar garçons.' });
     }
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    user = new User({
-      name,
-      email,
-      password: hashedPassword,
-      role: role && ['freelancer', 'admin'].includes(role) ? role : undefined,
-    });
-
-    await user.save();
-
-    res.status(201).json({ message: 'Usuário registrado com sucesso!', userId: user._id, email: user.email, role: user.role });
-
-  } catch (error) {
-    console.error('Erro no registro do usuário:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao registrar o usuário.' });
-  }
 });
-
-// Rota de Login de Usuário
-app.post('/api/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Por favor, forneça e-mail e senha.' });
+app.get('/api/cashiers', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_data, range: 'Caixas!A2:B' });
+        const rows = response.data.values || [];
+        const cashiers = rows.map(row => ({ cpf: row[0], name: row[1] }));
+        res.status(200).json(cashiers);
+    } catch (error) {
+        console.error('Erro ao buscar dados de caixas:', error);
+        res.status(500).json({ message: 'Erro interno do servidor ao buscar caixas.' });
     }
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(400).json({ message: 'Credenciais inválidas.' });
+});
+app.get('/api/users', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_users, range: 'Logins!A2:E' });
+        const rows = response.data.values || [];
+        const users = rows.map(row => ({
+            cpf: row[0], name: row[1], dob: row[2],
+            profile: (row[3] || 'default').trim(),
+            permissions: (row[4] || '').trim()
+        }));
+        res.status(200).json(users);
+    } catch (error) {
+        console.error('Erro ao buscar dados de usuários:', error);
+        res.status(500).json({ message: 'Erro interno do servidor ao buscar usuários.' });
     }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Credenciais inválidas.' });
+});
+const parseValue = (value) => {
+    if (!value || typeof value !== 'string') return 0;
+    const numberString = value.replace('R$', '').trim().replace(/\./g, '').replace(',', '.');
+    return parseFloat(numberString) || 0;
+};
+app.get('/api/closings', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const { eventName } = req.query;
+        if (!eventName) {
+            return res.status(400).json({ message: 'O nome do evento é obrigatório.' });
+        }
+        const waitersResponse = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_data, range: 'Fechamento Garçons!A:Q' });
+        const waiterRows = waitersResponse.data.values || [];
+        const waiterClosings = waiterRows.slice(1).filter(row => row[0] === eventName).map(row => ({
+            type: 'waiter', eventName: row[0], protocol: row[1], timestamp: row[2], cpf: row[3], waiterName: row[4],
+            valorTotal: parseValue(row[7]), credito: parseValue(row[8]), debito: parseValue(row[9]),
+            pix: parseValue(row[10]), cashless: parseValue(row[11]), comissaoTotal: parseValue(row[12]),
+            acertoLabel: row[13], valorAcerto: parseValue(row[14]), operatorName: row[16]
+        }));
+        const waiters10Response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_data, range: 'Fechamento Garçons 10%!A:Q' });
+        const waiter10Rows = waiters10Response.data.values || [];
+        const waiter10Closings = waiter10Rows.slice(1).filter(row => row[0] === eventName).map(row => ({
+            type: 'waiter', eventName: row[0], protocol: row[1], timestamp: row[2], cpf: row[3], waiterName: row[4],
+            valorTotal: parseValue(row[7]), credito: parseValue(row[8]), debito: parseValue(row[9]),
+            pix: parseValue(row[10]), cashless: parseValue(row[11]), comissaoTotal: parseValue(row[12]),
+            acertoLabel: row[13], valorAcerto: parseValue(row[14]), operatorName: row[16]
+        }));
+        const cashiersResponse = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_data, range: 'Fechamento Caixas!A:R' });
+        const cashierRows = cashiersResponse.data.values || [];
+        const cashierClosings = cashierRows.slice(1).filter(row => row[0] === eventName).map(row => ({
+            type: 'cashier', eventName: row[0], protocol: row[1], timestamp: row[2], cpf: row[3], cashierName: row[4],
+            valorTotalVenda: parseValue(row[8]), credito: parseValue(row[9]), debito: parseValue(row[10]),
+            pix: parseValue(row[11]), cashless: parseValue(row[12]), dinheiroFisico: parseValue(row[13]),
+            diferenca: parseValue(row[15]), operatorName: row[17]
+        }));
+        const allClosings = [...waiterClosings, ...waiter10Closings, ...cashierClosings];
+        allClosings.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        res.status(200).json(allClosings);
+    } catch (error) {
+        console.error('Erro ao buscar histórico de fechamentos:', error);
+        res.status(500).json({ message: 'Erro interno do servidor ao buscar histórico.' });
     }
-
-    const payload = {
-      user: {
-        id: user.id,
-        role: user.role,
-      },
-    };
-
-    jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' },
-      (err, token) => {
-        if (err) throw err;
-        res.json({ token, userId: user.id, role: user.role });
-      }
-    );
-
-  } catch (error) {
-    console.error('Erro no login do usuário:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao fazer login.' });
-  }
 });
+// ...
 
-// Rota de exemplo protegida
-app.get('/api/protected', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).select('-password');
-    res.json({ message: `Bem-vindo à rota protegida, ${user.name}! Seu papel é ${user.role}.`, user });
-  } catch (error) {
-    console.error('Erro ao acessar rota protegida:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao acessar recurso protegido.' });
-  }
-});
-
-// --- Rotas para Eventos ---
-
-// Criar um Evento (somente Admin)
-app.post('/api/events', auth, roleAuth(['admin']), async (req, res) => {
-  try {
-    const { title, description, startDate, endDate, location, isPublished, workers } = req.body;
-    const adminId = req.user.id; // ID do admin que está criando o evento
-
-    const newEvent = new Event({
-      title,
-      description,
-      startDate,
-      endDate,
-      location,
-      admin: adminId,
-      isPublished: isPublished || false,
-      workers: workers || [],
-    });
-
-    await newEvent.save();
-    res.status(201).json({ message: 'Evento criado com sucesso!', event: newEvent });
-  } catch (error) {
-    console.error('Erro ao criar evento:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao criar evento.' });
-  }
-});
-
-// Obter todos os eventos (visível para todos autenticados)
-app.get('/api/events', auth, async (req, res) => {
-  try {
-    const events = await Event.find().populate('admin', 'name email').populate('workers', 'name email');
-    res.status(200).json(events);
-  } catch (error) {
-    console.error('Erro ao buscar eventos:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao buscar eventos.' });
-  }
-});
-
-// Obter um único evento por ID
-app.get('/api/events/:id', auth, async (req, res) => {
-  try {
-    const event = await Event.findById(req.params.id).populate('admin', 'name email').populate('workers', 'name email');
-    if (!event) {
-      return res.status(404).json({ message: 'Evento não encontrado.' });
+// --- ROTAS DO MÓDULO DE ESTOQUE ---
+app.get('/api/stock/inventory', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Inventario!A:G' });
+        const rows = response.data.values || [];
+        const products = rows.slice(1).map(row => ({
+            productId: row[0], productName: row[1],
+            unitsPerBox: parseInt(row[2], 10) || 0,
+            boxStock: parseInt(row[3], 10) || 0,
+            unitStock: parseInt(row[4], 10) || 0,
+            dateAdded: row[5],
+            lastVerified: row[6] || null,
+        })).sort((a, b) => (a.productName || '').localeCompare(b.productName || ''));
+        res.status(200).json(products);
+    } catch (error) {
+        console.error('Erro ao buscar inventário:', error);
+        res.status(500).json({ message: 'Erro ao buscar dados do inventário.' });
     }
-    res.status(200).json(event);
-  } catch (error) {
-    console.error('Erro ao buscar evento por ID:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao buscar evento.' });
-  }
 });
 
-// Atualizar um evento (somente admin)
-app.put('/api/events/:id', auth, roleAuth(['admin']), async (req, res) => {
-  try {
-    const { title, description, startDate, endDate, location, isPublished, workers } = req.body;
-    const updatedEvent = await Event.findByIdAndUpdate(
-      req.params.id,
-      { title, description, startDate, endDate, location, isPublished, workers },
-      { new: true } // Retorna o documento atualizado
-    );
-    if (!updatedEvent) {
-      return res.status(404).json({ message: 'Evento não encontrado.' });
+app.post('/api/stock/inventory', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const { productName, unitsPerBox, boxStock, unitStock } = req.body;
+        if (!productName || !unitsPerBox) {
+            return res.status(400).json({ message: 'Nome do produto e unidades por caixa são obrigatórios.' });
+        }
+        const newRow = [ `PROD-${Date.now()}`, productName, unitsPerBox, boxStock || 0, unitStock || 0, new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }), null ];
+        await googleSheets.spreadsheets.values.append({
+            spreadsheetId: spreadsheetId_stock, range: 'Inventario',
+            valueInputOption: 'USER_ENTERED', resource: { values: [newRow] },
+        });
+        res.status(201).json({ message: 'Produto cadastrado com sucesso!', productName });
+    } catch (error) {
+        console.error('Erro ao salvar produto no inventário:', error);
+        res.status(500).json({ message: 'Erro ao salvar produto.' });
     }
-    res.status(200).json({ message: 'Evento atualizado com sucesso!', event: updatedEvent });
-  } catch (error) {
-    console.error('Erro ao atualizar evento:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao atualizar evento.' });
-  }
 });
 
-// Deletar um evento (somente admin)
-app.delete('/api/events/:id', auth, roleAuth(['admin']), async (req, res) => {
-  try {
-    const deletedEvent = await Event.findByIdAndDelete(req.params.id);
-    if (!deletedEvent) {
-      return res.status(404).json({ message: 'Evento não encontrado.' });
+app.post('/api/stock/inventory/update', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const { productId, newBoxStock, newUnitStock, operatorName } = req.body;
+        
+        const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Inventario!A:G' });
+        const rows = response.data.values || [];
+        const productIndex = rows.findIndex(row => row[0] === productId);
+
+        if (productIndex === -1) {
+            return res.status(404).json({ message: 'Produto não encontrado para atualização.' });
+        }
+
+        const productRow = rows[productIndex];
+        const productName = productRow[1];
+        const oldBoxStock = productRow[3];
+        const oldUnitStock = productRow[4];
+        const dateAdded = productRow[5];
+        const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
+        const historyRow = [ now, productId, productName, oldBoxStock, oldUnitStock, newBoxStock, newUnitStock, operatorName ];
+        await googleSheets.spreadsheets.values.append({
+            spreadsheetId: spreadsheetId_stock, range: 'HistoricoInventario',
+            valueInputOption: 'USER_ENTERED', resource: { values: [historyRow] },
+        });
+
+        const rangeToUpdate = `Inventario!D${productIndex + 1}:G${productIndex + 1}`;
+        await googleSheets.spreadsheets.values.update({
+            spreadsheetId: spreadsheetId_stock, range: rangeToUpdate,
+            valueInputOption: 'USER_ENTERED',
+            resource: { values: [[newBoxStock, newUnitStock, dateAdded, now]] }
+        });
+
+        res.status(200).json({ message: 'Estoque atualizado com sucesso!' });
+
+    } catch (error) {
+        console.error('Erro ao atualizar inventário:', error);
+        res.status(500).json({ message: 'Erro ao atualizar inventário.' });
     }
-    res.status(200).json({ message: 'Evento deletado com sucesso!' });
-  } catch (error) {
-    console.error('Erro ao deletar evento:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao deletar evento.' });
-  }
 });
 
-// Adicionar um trabalhador a um evento (somente admin)
-app.put('/api/events/:id/add-worker', auth, roleAuth(['admin']), async (req, res) => {
-  try {
-    const { workerId } = req.body;
-    const event = await Event.findById(req.params.id);
-    if (!event) {
-      return res.status(404).json({ message: 'Evento não encontrado.' });
+app.get('/api/stock/registrations', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const response = await googleSheets.spreadsheets.values.get({
+            spreadsheetId: spreadsheetId_stock,
+            range: 'Cadastros!A:J',
+        });
+        const rows = response.data.values || [];
+        const registrations = rows.slice(1).map(row => ({
+            id: row[0], type: row[1], name: row[2],
+            doc: row[3], contact: row[4], responsibleName: row[5],
+            plate: row[6], city: row[7], notes: row[8],
+        })).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        res.status(200).json(registrations);
+    } catch (error) {
+        console.error('Erro ao buscar cadastros:', error);
+        res.status(500).json({ message: 'Erro ao buscar dados de cadastros.' });
     }
-    if (!event.workers.includes(workerId)) {
-      event.workers.push(workerId);
-      await event.save();
+});
+
+app.post('/api/stock/registrations', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const { type, name, doc, contact, responsibleName, plate, city, notes } = req.body;
+        
+        const newRow = [
+            `CAD-${Date.now()}`, type, name,
+            doc || null, contact || null, responsibleName || null,
+            plate || null, city || null, notes || null,
+            new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+        ];
+
+        await googleSheets.spreadsheets.values.append({
+            spreadsheetId: spreadsheetId_stock,
+            range: 'Cadastros',
+            valueInputOption: 'USER_ENTERED',
+            resource: { values: [newRow] },
+        });
+        res.status(201).json({ message: 'Cadastro salvo com sucesso!', name });
+    } catch (error) {
+        console.error('Erro ao salvar cadastro:', error);
+        res.status(500).json({ message: 'Erro ao salvar cadastro.' });
     }
-    res.status(200).json({ message: 'Trabalhador adicionado ao evento com sucesso!', event });
-  } catch (error) {
-    console.error('Erro ao adicionar trabalhador:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao adicionar trabalhador.' });
-  }
 });
 
-// Remover um trabalhador de um evento (somente admin)
-app.put('/api/events/:id/remove-worker', auth, roleAuth(['admin']), async (req, res) => {
-  try {
-    const { workerId } = req.body;
-    const event = await Event.findById(req.params.id);
-    if (!event) {
-      return res.status(404).json({ message: 'Evento não encontrado.' });
+app.put('/api/stock/registrations/:id', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const { id } = req.params;
+        const { type, name, doc, contact, responsibleName, plate, city, notes } = req.body;
+
+        const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Cadastros!A:J' });
+        const rows = response.data.values || [];
+        const rowIndex = rows.findIndex(row => row[0] === id);
+
+        if (rowIndex === -1) {
+            return res.status(404).json({ message: 'Cadastro não encontrado.' });
+        }
+
+        const updatedRow = [ id, type, name, doc || null, contact || null, responsibleName || null, plate || null, city || null, notes || null, rows[rowIndex][9] ];
+        
+        const rangeToUpdate = `Cadastros!A${rowIndex + 1}:J${rowIndex + 1}`;
+        await googleSheets.spreadsheets.values.update({
+            spreadsheetId: spreadsheetId_stock, range: rangeToUpdate,
+            valueInputOption: 'USER_ENTERED', resource: { values: [updatedRow] }
+        });
+
+        res.status(200).json({ message: 'Cadastro atualizado com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao atualizar cadastro:', error);
+        res.status(500).json({ message: 'Erro ao atualizar cadastro.' });
     }
-    event.workers = event.workers.filter(worker => worker.toString() !== workerId);
-    await event.save();
-    res.status(200).json({ message: 'Trabalhador removido do evento com sucesso!', event });
-  } catch (error) {
-    console.error('Erro ao remover trabalhador:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao remover trabalhador.' });
-  }
 });
 
-// Publicar um evento (somente admin)
-app.put('/api/events/:id/publish', auth, roleAuth(['admin']), async (req, res) => {
-  try {
-    const event = await Event.findByIdAndUpdate(
-      req.params.id,
-      { isPublished: true },
-      { new: true }
-    );
-    if (!event) {
-      return res.status(404).json({ message: 'Evento não encontrado.' });
+app.delete('/api/stock/registrations/:id', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const { id } = req.params;
+
+        const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Cadastros!A:A' });
+        const rows = response.data.values || [];
+        const rowIndex = rows.findIndex(row => row[0] === id);
+
+        if (rowIndex === -1) {
+            return res.status(404).json({ message: 'Cadastro não encontrado para exclusão.' });
+        }
+        
+        const sheetId = 0; // Assumindo que 'Cadastros' é a primeira aba (ID 0)
+        await googleSheets.spreadsheets.batchUpdate({
+            spreadsheetId: spreadsheetId_stock,
+            resource: {
+                requests: [{
+                    deleteDimension: {
+                        range: {
+                            sheetId: sheetId,
+                            dimension: 'ROWS',
+                            startIndex: rowIndex,
+                            endIndex: rowIndex + 1
+                        }
+                    }
+                }]
+            }
+        });
+        
+        res.status(200).json({ message: 'Cadastro excluído com sucesso!' });
+    } catch (error) {
+        console.error('Erro ao excluir cadastro:', error);
+        res.status(500).json({ message: 'Erro ao excluir cadastro.' });
     }
-    res.status(200).json({ message: 'Evento publicado com sucesso!', event });
-  } catch (error) {
-    console.error('Erro ao publicar evento:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao publicar evento.' });
-  }
 });
 
+app.post('/api/stock/movements', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const { type, registrationId, notes, operatorName, products, returnDate } = req.body;
 
-// --- Rotas para Vagas de Freelancers ---
+        const inventoryResponse = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Inventario!A:G' });
+        const inventoryRows = inventoryResponse.data.values || [];
+        
+        const registrationsResponse = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Cadastros!A:J' });
+        const registrationRows = registrationsResponse.data.values || [];
+        const registration = registrationRows.find(row => row && row[0] === registrationId);
+        if (!registration) return res.status(404).json({ message: 'Cadastro (cliente/fornecedor/evento) não encontrado.' });
+        
+        const registrationName = registration[2];
+        const registrationDoc = registration[3];
 
-// Criar uma Vaga (somente Admin)
-app.post('/api/jobs', auth, roleAuth(['admin']), async (req, res) => {
-  try {
-    const { title, description, requirements, eventId } = req.body;
-    const adminId = req.user.id;
+        let updatedInventoryMap = {};
+        let newMovementRows = [];
+        const date = new Date();
+        const transactionId = `MOV-${date.getTime()}`;
+        const isEntry = type.includes('COMPRA') || type.includes('RETORNO');
 
-    const newJob = new Job({
-      title,
-      description,
-      requirements,
-      event: eventId || null, // Se um eventId for fornecido, associa a vaga ao evento
-      admin: adminId,
-    });
+        for (const product of products) {
+            const productIndex = inventoryRows.findIndex(row => row && row[0] === product.productId);
+            if (productIndex === -1) throw new Error(`Produto ${product.productName} não encontrado.`);
+            
+            const productRow = inventoryRows[productIndex];
+            const unitsPerBox = parseInt(productRow[2], 10);
+            let currentBoxStock = updatedInventoryMap[product.productId] ? updatedInventoryMap[product.productId].boxStock : parseInt(productRow[3], 10);
+            let currentUnitStock = updatedInventoryMap[product.productId] ? updatedInventoryMap[product.productId].unitStock : parseInt(productRow[4], 10);
+            const totalMovementUnits = (product.boxQuantity * unitsPerBox) + product.unitQuantity;
 
-    await newJob.save();
-    res.status(201).json({ message: 'Vaga criada com sucesso!', job: newJob });
-  } catch (error) {
-    console.error('Erro ao criar vaga:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao criar vaga.' });
-  }
-});
+            if (isEntry) {
+                currentUnitStock += totalMovementUnits;
+                while (currentUnitStock >= unitsPerBox) {
+                    currentBoxStock += 1;
+                    currentUnitStock -= unitsPerBox;
+                }
+            } else { // Saída
+                const totalCurrentUnits = (currentBoxStock * unitsPerBox) + currentUnitStock;
+                if (totalMovementUnits > totalCurrentUnits) throw new Error(`Estoque insuficiente para ${product.productName}.`);
+                currentUnitStock -= totalMovementUnits;
+                while (currentUnitStock < 0) {
+                    currentBoxStock -= 1;
+                    currentUnitStock += unitsPerBox;
+                }
+            }
+            
+            updatedInventoryMap[product.productId] = { 
+                newBoxStock: currentBoxStock, 
+                newUnitStock: currentUnitStock,
+                range: `Inventario!D${productIndex + 1}:E${productIndex + 1}`
+            };
+            
+            newMovementRows.push([ transactionId, date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }), type, product.productId, product.productName, registrationId, registrationName, product.boxQuantity, product.unitQuantity, notes, operatorName, returnDate || null ]);
+        }
 
-// Obter todas as vagas (visível para todos autenticados)
-app.get('/api/jobs', auth, async (req, res) => {
-  try {
-    const jobs = await Job.find().populate('admin', 'name email').populate('event', 'title startDate').populate('applicants', 'name email');
-    res.status(200).json(jobs);
-  } catch (error) {
-    console.error('Erro ao buscar vagas:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao buscar vagas.' });
-  }
-});
+        const updateRequests = Object.values(updatedInventoryMap).map(update => ({
+            range: update.range,
+            values: [[update.newBoxStock, update.newUnitStock]]
+        }));
+        if (updateRequests.length > 0) {
+            await googleSheets.spreadsheets.values.batchUpdate({
+                spreadsheetId: spreadsheetId_stock,
+                resource: { valueInputOption: 'USER_ENTERED', data: updateRequests }
+            });
+        }
 
-// Obter uma única vaga por ID
-app.get('/api/jobs/:id', auth, async (req, res) => {
-  try {
-    const job = await Job.findById(req.params.id).populate('admin', 'name email').populate('event', 'title startDate').populate('applicants', 'name email');
-    if (!job) {
-      return res.status(404).json({ message: 'Vaga não encontrada.' });
+        await googleSheets.spreadsheets.values.append({
+            spreadsheetId: spreadsheetId_stock, range: 'Movimentacoes',
+            valueInputOption: 'USER_ENTERED', resource: { values: newMovementRows },
+        });
+        
+        // << INÍCIO DA CORREÇÃO >>
+        const productsMap = new Map((inventoryRows || []).slice(1).map(row => [row[0], { unitsPerBox: parseInt(row[2], 10) || 0 }]));
+        const productsWithDetails = products.map(p => ({
+            ...p,
+            unitsPerBox: productsMap.get(p.productId)?.unitsPerBox || 0,
+        }));
+        const details = { id: transactionId, date: date.toISOString(), type, registrationName, doc: registrationDoc, products: productsWithDetails, notes, operatorName, returnDate };
+        // << FIM DA CORREÇÃO >>
+        
+        res.status(201).json({ message: `Movimentação registrada!`, details });
+    } catch (error) {
+        console.error('Erro ao processar movimentação:', error);
+        res.status(500).json({ message: error.message || 'Erro ao processar a movimentação.' });
     }
-    res.status(200).json(job);
-  } catch (error) {
-    console.error('Erro ao buscar vaga por ID:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao buscar vaga.' });
-  }
 });
 
-// Atualizar uma vaga (somente admin)
-app.put('/api/jobs/:id', auth, roleAuth(['admin']), async (req, res) => {
-  try {
-    const { title, description, requirements, eventId, status } = req.body;
-    const updatedJob = await Job.findByIdAndUpdate(
-      req.params.id,
-      { title, description, requirements, event: eventId, status },
-      { new: true }
-    );
-    if (!updatedJob) {
-      return res.status(404).json({ message: 'Vaga não encontrada.' });
+app.post('/api/stock/returns', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const { registrationId, eventId, eventName, notes, operatorName, products } = req.body;
+
+        const inventoryResponse = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Inventario!A:G' });
+        const inventoryRows = inventoryResponse.data.values || [];
+        
+        const registrationsResponse = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Cadastros!A:J' });
+        const registrationRows = registrationsResponse.data.values || [];
+        const registration = registrationRows.find(row => row && row[0] === registrationId);
+        if (!registration) return res.status(404).json({ message: 'Cadastro (fornecedor) não encontrado.' });
+        const registrationName = registration[2];
+        const registrationDoc = registration[3];
+        
+        let updatedInventoryMap = {};
+        let newReturnRows = [];
+        const date = new Date();
+        const returnId = `DEV-${date.getTime()}`;
+
+        for (const product of products) {
+            const productIndex = inventoryRows.findIndex(row => row && row[0] === product.productId);
+            if (productIndex === -1) throw new Error(`Produto ${product.productName} não encontrado.`);
+            
+            const productRow = inventoryRows[productIndex];
+            const unitsPerBox = parseInt(productRow[2], 10);
+            let currentBoxStock = updatedInventoryMap[product.productId] ? updatedInventoryMap[product.productId].boxStock : parseInt(productRow[3], 10);
+            let currentUnitStock = updatedInventoryMap[product.productId] ? updatedInventoryMap[product.productId].unitStock : parseInt(productRow[4], 10);
+            const totalReturnedUnits = (product.boxQuantity * unitsPerBox) + product.unitQuantity;
+
+            currentUnitStock += totalReturnedUnits;
+            while (currentUnitStock >= unitsPerBox) {
+                currentBoxStock += 1;
+                currentUnitStock -= unitsPerBox;
+            }
+            
+            updatedInventoryMap[product.productId] = { 
+                newBoxStock: currentBoxStock, 
+                newUnitStock: currentUnitStock,
+                range: `Inventario!D${productIndex + 1}:E${productIndex + 1}`
+            };
+            
+            newReturnRows.push([ returnId, date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }), product.productId, product.productName, registrationId, registrationName, product.boxQuantity, product.unitQuantity, notes, operatorName, eventName ]);
+        }
+
+        const updateRequests = Object.values(updatedInventoryMap).map(update => ({
+            range: update.range,
+            values: [[update.newBoxStock, update.newUnitStock]]
+        }));
+        if (updateRequests.length > 0) {
+            await googleSheets.spreadsheets.values.batchUpdate({
+                spreadsheetId: spreadsheetId_stock,
+                resource: { valueInputOption: 'USER_ENTERED', data: updateRequests }
+            });
+        }
+
+        await googleSheets.spreadsheets.values.append({
+            spreadsheetId: spreadsheetId_stock, range: 'Devolucoes',
+            valueInputOption: 'USER_ENTERED', resource: { values: newReturnRows },
+        });
+        
+        // << INÍCIO DA CORREÇÃO >>
+        const productsMap = new Map((inventoryRows || []).slice(1).map(row => [row[0], { unitsPerBox: parseInt(row[2], 10) || 0 }]));
+        const productsWithDetails = products.map(p => ({
+            ...p,
+            unitsPerBox: productsMap.get(p.productId)?.unitsPerBox || 0,
+        }));
+        const details = { id: returnId, date: date.toISOString(), type: 'DEVOLUÇÃO', registrationName, doc: registrationDoc, eventName, products: productsWithDetails, notes, operatorName };
+        // << FIM DA CORREÇÃO >>
+
+        res.status(201).json({ message: `Devolução registrada!`, details: details });
+    } catch (error) {
+        console.error('Erro ao processar devolução:', error);
+        res.status(500).json({ message: error.message || 'Erro ao processar a devolução.' });
     }
-    res.status(200).json({ message: 'Vaga atualizada com sucesso!', job: updatedJob });
-  } catch (error) {
-    console.error('Erro ao atualizar vaga:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao atualizar vaga.' });
-  }
 });
 
-// Deletar uma vaga (somente admin)
-app.delete('/api/jobs/:id', auth, roleAuth(['admin']), async (req, res) => {
-  try {
-    const deletedJob = await Job.findByIdAndDelete(req.params.id);
-    if (!deletedJob) {
-      return res.status(404).json({ message: 'Vaga não encontrada.' });
+app.get('/api/stock/audit', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        
+        const parsePtBrDate = (dateString) => {
+            if (!dateString || !dateString.includes('/')) return new Date(0);
+            const [datePart, timePart] = dateString.split(', ');
+            const [day, month, year] = datePart.split('/');
+            return new Date(`${year}-${month}-${day}T${timePart || '00:00:00'}`);
+        };
+
+        const movementsRes = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Movimentacoes!A:L' });
+        const movementRows = (movementsRes.data.values || []).slice(1);
+        const movementLogs = movementRows.map(row => ({
+            id: row[0], date: row[1], type: row[2], productName: row[4], registrationName: row[6],
+            boxQuantity: row[7] || 0, unitQuantity: row[8] || 0, operator: row[10]
+        }));
+
+        const returnsRes = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Devolucoes!A:K' });
+        const returnRows = (returnsRes.data.values || []).slice(1);
+        const returnLogs = returnRows.map(row => ({
+            id: row[0], date: row[1], type: 'DEVOLUÇÃO', productName: row[3], registrationName: row[5],
+            boxQuantity: row[6] || 0, unitQuantity: row[7] || 0, operator: row[9]
+        }));
+        
+        const historyRes = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'HistoricoInventario!A:H' });
+        const historyRows = (historyRes.data.values || []).slice(1);
+        const historyLogs = historyRows.map(row => ({
+            id: `INV-${row[0]}`, date: row[0], type: 'INVENTÁRIO', productName: row[2], 
+            registrationName: `De ${row[3]}cx/${row[4]}un para ${row[5]}cx/${row[6]}un`,
+            boxQuantity: row[5], unitQuantity: row[6], operator: row[7]
+        }));
+
+        const allLogs = [...movementLogs, ...returnLogs, ...historyLogs];
+        
+        allLogs.sort((a, b) => parsePtBrDate(b.date) - parsePtBrDate(a.date));
+
+        res.status(200).json(allLogs);
+
+    } catch (error) {
+        console.error('Erro ao buscar auditoria:', error);
+        res.status(500).json({ message: 'Erro ao buscar dados de auditoria.' });
     }
-    res.status(200).json({ message: 'Vaga deletada com sucesso!' });
-  } catch (error) {
-    console.error('Erro ao deletar vaga:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao deletar vaga.' });
-  }
 });
 
-// Aplicar para uma vaga (somente freelancer)
-app.post('/api/jobs/:id/apply', auth, roleAuth(['freelancer']), async (req, res) => {
-  try {
-    const jobId = req.params.id;
-    const freelancerId = req.user.id;
+app.get('/api/stock/transaction/:id', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const { id } = req.params;
+        const inventoryResponse = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Inventario!A:C' });
+        const productsMap = new Map((inventoryResponse.data.values || []).slice(1).map(row => [row[0], { name: row[1], unitsPerBox: row[2] }]));
+        
+        const registrationsResponse = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Cadastros!A:J' });
+        const registrationsMap = new Map((registrationsResponse.data.values || []).slice(1).map(row => [row[0], { name: row[2], doc: row[3], contact: row[4], plate: row[6] }]));
 
-    const job = await Job.findById(jobId);
-    if (!job) {
-      return res.status(404).json({ message: 'Vaga não encontrada.' });
+        let details = null;
+
+        if (id.startsWith('DEV-')) {
+            const returnsRes = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Devolucoes!A:K' });
+            const transactionRows = (returnsRes.data.values || []).slice(1).filter(row => row[0] === id);
+            if (transactionRows.length > 0) {
+                const firstRow = transactionRows[0];
+                const registrationDetails = registrationsMap.get(firstRow[4]) || {};
+                details = {
+                    id: firstRow[0], date: firstRow[1], type: 'DEVOLUÇÃO', 
+                    registrationName: firstRow[5], ...registrationDetails,
+                    eventName: firstRow[10], notes: firstRow[8], operatorName: firstRow[9],
+                    products: transactionRows.map(row => ({
+                        productName: `${row[3]}`, // Removido (cx...) para consistência
+                        boxQuantity: row[6], unitQuantity: row[7],
+                        unitsPerBox: parseInt(productsMap.get(row[2])?.unitsPerBox, 10) || 0
+                    }))
+                };
+            }
+        } else if (id.startsWith('MOV-')) {
+            const movementsRes = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_stock, range: 'Movimentacoes!A:L' });
+            const transactionRows = (movementsRes.data.values || []).slice(1).filter(row => row[0] === id);
+            if (transactionRows.length > 0) {
+                const firstRow = transactionRows[0];
+                const registrationDetails = registrationsMap.get(firstRow[5]) || {};
+                details = {
+                    id: firstRow[0], date: firstRow[1], type: firstRow[2], 
+                    registrationName: firstRow[6], ...registrationDetails,
+                    notes: firstRow[9], operatorName: firstRow[10], returnDate: firstRow[11],
+                    products: transactionRows.map(row => ({
+                        productName: `${row[4]}`, // Removido (cx...) para consistência
+                        boxQuantity: row[7], unitQuantity: row[8],
+                        unitsPerBox: parseInt(productsMap.get(row[3])?.unitsPerBox, 10) || 0
+                    }))
+                };
+            }
+        }
+
+        if (details) res.status(200).json(details);
+        else res.status(404).json({ message: 'Transação não encontrada.' });
+        
+    } catch (error) {
+        console.error('Erro ao buscar detalhes da transação:', error);
+        res.status(500).json({ message: 'Erro ao buscar detalhes da transação.' });
     }
-
-    // Verifica se o freelancer já se candidatou
-    if (job.applicants.includes(freelancerId)) {
-      return res.status(400).json({ message: 'Você já se candidatou a esta vaga.' });
-    }
-
-    job.applicants.push(freelancerId);
-    await job.save();
-
-    res.status(200).json({ message: 'Candidatura enviada com sucesso!', job });
-  } catch (error) {
-    console.error('Erro ao candidatar-se à vaga:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao candidatar-se à vaga.' });
-  }
 });
 
-
-// --- Rotas para Avaliações ---
-
-// Enviar uma Avaliação para um Evento (somente Trabalhador do Evento)
-app.post('/api/reviews', auth, async (req, res) => {
-  try {
-    const { eventId, rating, comment } = req.body;
-    const reviewerId = req.user.id; // O ID do usuário que está fazendo a avaliação
-
-    // Verifica se o usuário autenticado é um "worker" do evento antes de permitir a avaliação
-    const event = await Event.findById(eventId);
-    if (!event || !event.workers.includes(reviewerId)) {
-      return res.status(403).json({ message: 'Você não tem permissão para avaliar este evento ou o evento não existe.' });
-    }
-
-    const newReview = new Review({
-      event: eventId,
-      reviewer: reviewerId,
-      rating,
-      comment,
-    });
-
-    await newReview.save();
-    res.status(201).json({ message: 'Avaliação enviada com sucesso!', review: newReview });
-  } catch (error) {
-    console.error('Erro ao enviar avaliação:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao enviar avaliação.' });
-  }
-});
-
-// Obter avaliações para um evento específico (Autenticado)
-app.get('/api/reviews/event/:eventId', auth, async (req, res) => {
-  try {
-    const reviews = await Review.find({ event: req.params.eventId })
-      .populate('reviewer', 'name email')
-      .populate('event', 'title');
-    res.status(200).json(reviews);
-  } catch (error) {
-    console.error('Erro ao buscar avaliações do evento:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao buscar avaliações do evento.' });
-  }
-});
-
-// Obter avaliações feitas por um usuário específico (Próprio Usuário ou Admin)
-app.get('/api/reviews/user/:userId', auth, async (req, res) => {
-  try {
-    // Permite que o próprio usuário veja suas avaliações ou um admin veja as de qualquer um
-    if (req.user.id !== req.params.userId && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Acesso negado. Você não tem permissão para ver estas avaliações.' });
-    }
-
-    const reviews = await Review.find({ reviewer: req.params.userId })
-      .populate('reviewer', 'name email')
-      .populate('event', 'title');
-    res.status(200).json(reviews);
-  } catch (error) {
-    console.error('Erro ao buscar avaliações do usuário:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao buscar avaliações do usuário.' });
-  }
-});
-
-// Aprovar uma avaliação (somente admin)
-app.put('/api/reviews/:id/approve', auth, roleAuth(['admin']), async (req, res) => {
-  try {
-    const review = await Review.findByIdAndUpdate(
-      req.params.id,
-      { adminApproved: true },
-      { new: true }
-    );
-    if (!review) {
-      return res.status(404).json({ message: 'Avaliação não encontrada.' });
-    }
-    res.status(200).json({ message: 'Avaliação aprovada com sucesso!', review });
-  } catch (error) {
-    console.error('Erro ao aprovar avaliação:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao aprovar avaliação.' });
-  }
-});
-
-
-// --- Rotas para Mensagens Internas ---
-
-// Enviar uma Mensagem (Autenticado)
-app.post('/api/messages', auth, async (req, res) => {
-  try {
-    const { receiverId, content } = req.body;
-    const senderId = req.user.id;
-
-    const newMessage = new Message({
-      sender: senderId,
-      receiver: receiverId,
-      content,
-    });
-
-    await newMessage.save();
-    res.status(201).json({ message: 'Mensagem enviada com sucesso!', message: newMessage });
-  } catch (error) {
-    console.error('Erro ao enviar mensagem:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao enviar mensagem.' });
-  }
-});
-
-// Obter todas as mensagens enviadas ou recebidas por um usuário específico (Próprio Usuário ou Admin)
-app.get('/api/messages/user/:userId', auth, async (req, res) => {
-  try {
-    // O usuário só pode ver suas próprias mensagens, a menos que seja um admin
-    if (req.user.id !== req.params.userId && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Acesso negado. Você não tem permissão para ver estas mensagens.' });
-    }
-
-    const messages = await Message.find({
-      $or: [{ sender: req.params.userId }, { receiver: req.params.userId }]
-    })
-      .populate('sender', 'name email')
-      .populate('receiver', 'name email')
-      .sort({ createdAt: 1 }); // Ordena por data de criação
-
-    res.status(200).json(messages);
-  } catch (error) {
-    console.error('Erro ao buscar mensagens do usuário:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao buscar mensagens do usuário.' });
-  }
-});
-
-// Marcar mensagem como lida (somente Destinatário da Mensagem ou Admin)
-app.put('/api/messages/:id/read', auth, async (req, res) => {
-  try {
-    const message = await Message.findById(req.params.id);
-    if (!message) {
-      return res.status(404).json({ message: 'Mensagem não encontrada.' });
-    }
-
-    // Apenas o receptor ou um admin pode marcar a mensagem como lida
-    if (message.receiver.toString() !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Acesso negado. Você não tem permissão para marcar esta mensagem como lida.' });
-    }
-
-    message.read = true;
-    await message.save();
-    res.status(200).json({ message: 'Mensagem marcada como lida!', message });
-  } catch (error) {
-    console.error('Erro ao marcar mensagem como lida:', error);
-    res.status(500).json({ message: 'Erro interno do servidor ao marcar mensagem como lida.' });
-  }
-});
-
-
-// Define a porta do servidor, usando a variável de ambiente PORT ou a porta 3001 como padrão
+// --- INICIALIZAÇÃO DO SERVIDOR ---
 const PORT = process.env.PORT || 3001;
-
-// Inicia o servidor e escuta na porta definida
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor backend rodando na porta ${PORT}`);
-  console.log('Para acessar, abra seu navegador em: http://localhost:' + PORT);
 });

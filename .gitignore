@@ -1,3 +1,7 @@
-    node_modules/
-    .env
-    
+.env   
+
+# Dependências
+node_modules/
+
+# Arquivos de Credenciais e Ambiente
+google-credentials.json
