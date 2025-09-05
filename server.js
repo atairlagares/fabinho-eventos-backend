@@ -5,8 +5,6 @@ const { google } = require('googleapis');
 const cors = require('cors');
 const app = express();
 
-global.Headers = require('undici').Headers;
-
 app.use(express.json());
 app.use(cors({ origin: '*' }));
 
