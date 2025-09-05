@@ -66,6 +66,7 @@ app.get('/api/cashiers', async (req, res) => {
 app.get('/api/users', async (req, res) => {
     try {
         const googleSheets = await getGoogleSheetsClient();
+        console.log('Conexão com a Google Sheets API estabelecida.'); // <-- Adicione esta linha
         const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_users, range: 'Logins!A2:E' });
         const rows = response.data.values || [];
         const users = rows.map(row => ({
