@@ -10,8 +10,9 @@ app.use(cors({ origin: '*' }));
 
 // --- FUNÇÕES DE AUTENTICAÇÃO E ACESSO À PLANILHA ---
 async function getGoogleSheetsClient() {
+  const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
   const auth = new google.auth.GoogleAuth({
-    keyFile: 'google-credentials.json',
+    credentials,
     scopes: 'https://www.googleapis.com/auth/spreadsheets',
   });
   const client = await auth.getClient();
