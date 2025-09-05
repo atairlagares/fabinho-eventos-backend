@@ -10,13 +10,19 @@ app.use(cors({ origin: '*' }));
 
 // --- FUNÇÕES DE AUTENTICAÇÃO E ACESSO À PLANILHA ---
 async function getGoogleSheetsClient() {
-  const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-  const auth = new google.auth.GoogleAuth({
-    credentials,
-    scopes: 'https://www.googleapis.com/auth/spreadsheets',
-  });
-  const client = await auth.getClient();
-  return google.sheets({ version: 'v4', auth: client });
+  try {
+    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: 'https://www.googleapis.com/auth/spreadsheets',
+    });
+    const client = await auth.getClient();
+    return google.sheets({ version: 'v4', auth: client });
+  } catch (error) {
+    // Este log vai capturar o erro exato do JSON.parse ou da autenticação
+    console.error('Erro na autenticação com a Google Sheets API:', error);
+    throw new Error('Falha na autenticação da API do Google Sheets.');
+  }
 }
 
 // IDs das Planilhas
@@ -66,7 +72,6 @@ app.get('/api/cashiers', async (req, res) => {
 app.get('/api/users', async (req, res) => {
     try {
         const googleSheets = await getGoogleSheetsClient();
-        console.log('Conexão com a Google Sheets API estabelecida.'); // <-- Adicione esta linha
         const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_users, range: 'Logins!A2:E' });
         const rows = response.data.values || [];
         const users = rows.map(row => ({
