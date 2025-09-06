@@ -87,6 +87,43 @@ app.get('/api/users', async (req, res) => {
         res.status(500).json({ message: 'Erro interno do servidor ao buscar usuários.' });
     }
 });
+
+// ROTA PARA CADASTRAR NOVOS USUÁRIOS (POST)
+app.post('/api/users', async (req, res) => {
+    try {
+        const googleSheets = await getGoogleSheetsClient();
+        const { cpf, name, dob, profile, permissions } = req.body;
+
+        // Validação básica para garantir que os campos essenciais foram enviados
+        if (!cpf || !name || !dob || !profile) {
+            return res.status(400).json({ message: 'CPF, Nome, Data de Nascimento e Perfil são obrigatórios.' });
+        }
+
+        const newRow = [
+            cpf,
+            name,
+            dob,
+            profile,
+            permissions || '' // Permissões são opcionais
+        ];
+
+        await googleSheets.spreadsheets.values.append({
+            spreadsheetId: spreadsheetId_users,
+            range: 'Logins!A:E', // A planilha e colunas onde os dados serão inseridos
+            valueInputOption: 'USER_ENTERED',
+            resource: {
+                values: [newRow],
+            },
+        });
+
+        res.status(201).json({ message: 'Usuário cadastrado com sucesso!', name });
+
+    } catch (error) {
+        console.error('Erro ao salvar usuário:', error);
+        res.status(500).json({ message: 'Erro interno do servidor ao salvar usuário.' });
+    }
+});
+
 const parseValue = (value) => {
     if (!value || typeof value !== 'string') return 0;
     const numberString = value.replace('R$', '').trim().replace(/\./g, '').replace(',', '.');
