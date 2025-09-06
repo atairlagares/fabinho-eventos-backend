@@ -75,7 +75,9 @@ app.get('/api/users', async (req, res) => {
         const response = await googleSheets.spreadsheets.values.get({ spreadsheetId: spreadsheetId_users, range: 'Logins!A2:E' });
         const rows = response.data.values || [];
         const users = rows.map(row => ({
-            cpf: row[0], name: row[1], dob: row[2],
+            cpf: (row[0] || '').trim(), 
+            name: (row[1] || '').trim(), 
+            dob: (row[2] || '').trim(),
             profile: (row[3] || 'default').trim(),
             permissions: (row[4] || '').trim()
         }));
