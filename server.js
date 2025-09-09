@@ -1,4 +1,4 @@
-// backend/server.js
+// backend/server.js (Versão Completa e Corrigida)
 
 const express = require('express');
 const { google } = require('googleapis');
@@ -19,7 +19,6 @@ async function getGoogleSheetsClient() {
     const client = await auth.getClient();
     return google.sheets({ version: 'v4', auth: client });
   } catch (error) {
-    // Este log vai capturar o erro exato do JSON.parse ou da autenticação
     console.error('Erro na autenticação com a Google Sheets API:', error);
     throw new Error('Falha na autenticação da API do Google Sheets.');
   }
@@ -30,9 +29,7 @@ const spreadsheetId_data = '1EkLUvQ3l8gAnim89pjDDn8BHBFlilywY7drj2b7N1cE';
 const spreadsheetId_users = '1J_bwtyK-3Z9jPy8Bp4u8IdJ9_9iE80J7fWg1yae7lO8';
 const spreadsheetId_stock = '1fjeYInwN2zScgIPPyJcfJ8z7i1N3QJQbShE-EwKDdRA';
 
-// --- ROTAS DO MÓDULO FINANCEIRO (Omitido) ---
-// ... (código existente)
-// --- ROTAS DE LEITURA (GET) - MÓDULO FINANCEIRO ---
+// --- ROTAS DE LEITURA (GET) - GERAIS E FINANCEIRO ---
 app.get('/api/events', async (req, res) => {
     try {
         const googleSheets = await getGoogleSheetsClient();
@@ -87,43 +84,30 @@ app.get('/api/users', async (req, res) => {
         res.status(500).json({ message: 'Erro interno do servidor ao buscar usuários.' });
     }
 });
-
 // ROTA PARA CADASTRAR NOVOS USUÁRIOS (POST)
 app.post('/api/users', async (req, res) => {
     try {
         const googleSheets = await getGoogleSheetsClient();
         const { cpf, name, dob, profile, permissions } = req.body;
-
-        // Validação básica para garantir que os campos essenciais foram enviados
         if (!cpf || !name || !dob || !profile) {
             return res.status(400).json({ message: 'CPF, Nome, Data de Nascimento e Perfil são obrigatórios.' });
         }
-
-        const newRow = [
-            cpf,
-            name,
-            dob,
-            profile,
-            permissions || '' // Permissões são opcionais
-        ];
-
+        const newRow = [ cpf, name, dob, profile, permissions || '' ];
         await googleSheets.spreadsheets.values.append({
             spreadsheetId: spreadsheetId_users,
-            range: 'Logins!A:E', // A planilha e colunas onde os dados serão inseridos
+            range: 'Logins!A:E',
             valueInputOption: 'USER_ENTERED',
-            resource: {
-                values: [newRow],
-            },
+            resource: { values: [newRow] },
         });
-
         res.status(201).json({ message: 'Usuário cadastrado com sucesso!', name });
-
     } catch (error) {
         console.error('Erro ao salvar usuário:', error);
         res.status(500).json({ message: 'Erro interno do servidor ao salvar usuário.' });
     }
 });
-
+// --- ROTAS DO MÓDULO FINANCEIRO (POST e GET) ---
+// ... (O resto das suas rotas financeiras, como /api/closings, etc., entram aqui)
+// Adicionando a rota /api/closings que estava no seu arquivo original
 const parseValue = (value) => {
     if (!value || typeof value !== 'string') return 0;
     const numberString = value.replace('R$', '').trim().replace(/\./g, '').replace(',', '.');
@@ -168,9 +152,11 @@ app.get('/api/closings', async (req, res) => {
         res.status(500).json({ message: 'Erro interno do servidor ao buscar histórico.' });
     }
 });
-// ...
+
 
 // --- ROTAS DO MÓDULO DE ESTOQUE ---
+// ... (todas as suas rotas de estoque, como /api/stock/inventory, etc., entram aqui)
+// O restante do seu arquivo server.js original continua aqui...
 app.get('/api/stock/inventory', async (req, res) => {
     try {
         const googleSheets = await getGoogleSheetsClient();
@@ -435,14 +421,12 @@ app.post('/api/stock/movements', async (req, res) => {
             valueInputOption: 'USER_ENTERED', resource: { values: newMovementRows },
         });
         
-        // << INÍCIO DA CORREÇÃO >>
         const productsMap = new Map((inventoryRows || []).slice(1).map(row => [row[0], { unitsPerBox: parseInt(row[2], 10) || 0 }]));
         const productsWithDetails = products.map(p => ({
             ...p,
             unitsPerBox: productsMap.get(p.productId)?.unitsPerBox || 0,
         }));
         const details = { id: transactionId, date: date.toISOString(), type, registrationName, doc: registrationDoc, products: productsWithDetails, notes, operatorName, returnDate };
-        // << FIM DA CORREÇÃO >>
         
         res.status(201).json({ message: `Movimentação registrada!`, details });
     } catch (error) {
@@ -512,14 +496,12 @@ app.post('/api/stock/returns', async (req, res) => {
             valueInputOption: 'USER_ENTERED', resource: { values: newReturnRows },
         });
         
-        // << INÍCIO DA CORREÇÃO >>
         const productsMap = new Map((inventoryRows || []).slice(1).map(row => [row[0], { unitsPerBox: parseInt(row[2], 10) || 0 }]));
         const productsWithDetails = products.map(p => ({
             ...p,
             unitsPerBox: productsMap.get(p.productId)?.unitsPerBox || 0,
         }));
         const details = { id: returnId, date: date.toISOString(), type: 'DEVOLUÇÃO', registrationName, doc: registrationDoc, eventName, products: productsWithDetails, notes, operatorName };
-        // << FIM DA CORREÇÃO >>
 
         res.status(201).json({ message: `Devolução registrada!`, details: details });
     } catch (error) {
@@ -596,7 +578,7 @@ app.get('/api/stock/transaction/:id', async (req, res) => {
                     registrationName: firstRow[5], ...registrationDetails,
                     eventName: firstRow[10], notes: firstRow[8], operatorName: firstRow[9],
                     products: transactionRows.map(row => ({
-                        productName: `${row[3]}`, // Removido (cx...) para consistência
+                        productName: `${row[3]}`,
                         boxQuantity: row[6], unitQuantity: row[7],
                         unitsPerBox: parseInt(productsMap.get(row[2])?.unitsPerBox, 10) || 0
                     }))
@@ -613,7 +595,7 @@ app.get('/api/stock/transaction/:id', async (req, res) => {
                     registrationName: firstRow[6], ...registrationDetails,
                     notes: firstRow[9], operatorName: firstRow[10], returnDate: firstRow[11],
                     products: transactionRows.map(row => ({
-                        productName: `${row[4]}`, // Removido (cx...) para consistência
+                        productName: `${row[4]}`,
                         boxQuantity: row[7], unitQuantity: row[8],
                         unitsPerBox: parseInt(productsMap.get(row[3])?.unitsPerBox, 10) || 0
                     }))
@@ -629,6 +611,8 @@ app.get('/api/stock/transaction/:id', async (req, res) => {
         res.status(500).json({ message: 'Erro ao buscar detalhes da transação.' });
     }
 });
+
+
 
 // --- INICIALIZAÇÃO DO SERVIDOR ---
 const PORT = process.env.PORT || 3001;
